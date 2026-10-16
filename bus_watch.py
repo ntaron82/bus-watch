@@ -27,7 +27,7 @@ FIND_JS = """
   let best = null;
   for (const el of document.querySelectorAll('li, tr, div, section, article')) {
     const t = el.innerText || '';
-    if (t.includes(time) && t.includes(stop) && t.length < 3000) {
+    if (t.includes(time) && t.includes(stop) && t.includes('円') && t.length < 5000) {
       if (!best || t.length < best.length) best = t;
     }
   }
@@ -68,8 +68,7 @@ def main():
                 text = page.evaluate(FIND_JS, [tm, stop])
                 status = judge(text)
                 print(f"11/{d} {tm} {stop}: {status}")
-                if status == "unknown":
-                    print("  テキスト:", (text or "")[:300])
+                print("  テキスト:", (text or "")[:1000])
                 if status == "available":
                     notify(f"空きあり！ 11/{d} {tm} {stop}発\n" + BASE.format(day=day))
         browser.close()
