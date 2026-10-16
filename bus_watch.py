@@ -36,13 +36,24 @@ FIND_JS = """
 """
 
 def judge(text):
+    """運賃の行ごとに残席を見て、1つでも満席以外があれば空きあり"""
     if text is None:
         return "not_found"
-    if "満席" in text:
+    # 「予約に進む」〜「詳細を閉じる」の間が運賃・残席の表
+    if "予約に進む" not in text:
+        return "unknown"
+    table = text.split("予約に進む", 1)[1].split("詳細を閉じる", 1)[0]
+    statuses = []
+    for line in table.splitlines():
+        if "\t" in line:
+            s = line.split("\t")[1].strip()   # タブの後ろが残席の欄
+            if s:
+                statuses.append(s)
+    if not statuses:
+        return "unknown"
+    if all(s == "満席" for s in statuses):
         return "full"
-    if any(k in text for k in ["空席あり", "残り", "予約する", "○", "△"]):
-        return "available"
-    return "unknown"
+    return "available"
 
 def notify(msg):
     requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"),
@@ -68,6 +79,7 @@ def main():
                 text = page.evaluate(FIND_JS, [tm, stop])
                 status = judge(text)
                 print(f"11/{d} {tm} {stop}: {status}")
+                if status == "unknown":
                 print("  テキスト:", (text or "")[:1000])
                 if status == "available":
                     notify(f"空きあり！ 11/{d} {tm} {stop}発\n" + BASE.format(day=day))
