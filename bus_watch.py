@@ -7,7 +7,7 @@ import datetime as dt
 import requests
 from playwright.sync_api import sync_playwright
 
-# トピック名はGitHubのSecretsから読む（公開リポジトリでも見えないように）
+# トピック名はGitHubのSecretsから読む
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 BASE = "https://secure.j-bus.co.jp/hon/Route/ehime_osaka?dtym=202611&dtdd={day}"
 
@@ -21,7 +21,7 @@ TARGETS = [
     (14, "6:55",  "室町"),
 ]
 
-# 時刻と乗車地を両方含む、いちばん小さい要素＝その便の枠
+# 時刻・乗車地・運賃（円）を含む、いちばん小さい要素＝その便のカード
 FIND_JS = """
 ([time, stop]) => {
   let best = null;
@@ -35,18 +35,19 @@ FIND_JS = """
 }
 """
 
+
 def judge(text):
     """運賃の行ごとに残席を見て、1つでも満席以外があれば空きあり"""
     if text is None:
         return "not_found"
-    # 「予約に進む」〜「詳細を閉じる」の間が運賃・残席の表
     if "予約に進む" not in text:
         return "unknown"
+    # 「予約に進む」〜「詳細を閉じる」の間が運賃・残席の表
     table = text.split("予約に進む", 1)[1].split("詳細を閉じる", 1)[0]
     statuses = []
     for line in table.splitlines():
         if "\t" in line:
-            s = line.split("\t")[1].strip()   # タブの後ろが残席の欄
+            s = line.split("\t")[1].strip()  # タブの後ろが残席の欄
             if s:
                 statuses.append(s)
     if not statuses:
@@ -55,13 +56,15 @@ def judge(text):
         return "full"
     return "available"
 
+
 def notify(msg):
     requests.post(f"https://ntfy.sh/{NTFY_TOPIC}", data=msg.encode("utf-8"),
                   headers={"Title": "Bus seat alert", "Priority": "high"}, timeout=10)
 
+
 def main():
     # 日本時間で2:00〜5:00はサイト休止なのでスキップ
-    jst = dt.datetime.utcnow() + dt.timedelta(hours=9)
+    jst = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=9)
     if 2 <= jst.hour < 5:
         print("サイト休止時間なのでスキップ")
         return
@@ -80,10 +83,11 @@ def main():
                 status = judge(text)
                 print(f"11/{d} {tm} {stop}: {status}")
                 if status == "unknown":
-                print("  テキスト:", (text or "")[:1000])
+                    print("  テキスト:", (text or "")[:1000])
                 if status == "available":
                     notify(f"空きあり！ 11/{d} {tm} {stop}発\n" + BASE.format(day=day))
         browser.close()
+
 
 if __name__ == "__main__":
     main()
