@@ -2,13 +2,18 @@ name: bus-watch
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # 5分おき（実際は混雑で遅れることあり）
-  workflow_dispatch:         # 手動実行ボタン用
+    - cron: "*/30 * * * *"   # 起動のきっかけ（実際は遅れてもOK。中で5分おきにループする）
+  workflow_dispatch:          # 手動実行ボタン用
+
+# 同時に動くのは1つだけ。動いている間に来た起動は待機させる
+concurrency:
+  group: bus-watch
+  cancel-in-progress: false
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 350      # 約5時間50分で強制終了（上限6時間）
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
