@@ -3,6 +3,7 @@
 （GitHub Actionsで定期実行する前提。1回動いたら終了する）
 """
 import os
+import time
 import datetime as dt
 import requests
 from playwright.sync_api import sync_playwright
@@ -62,30 +63,48 @@ def notify(msg):
                   headers={"Title": "Bus seat alert", "Priority": "high"}, timeout=10)
 
 
-def main():
-    # 日本時間で2:00〜5:00はサイト休止なのでスキップ
-    jst = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=9)
-    if 2 <= jst.hour < 5:
-        print("サイト休止時間なのでスキップ")
-        return
+INTERVAL_SEC = 5 * 60      # チェック間隔（5分）
+RUN_HOURS = 5.5            # 1回の起動で見張る時間（GitHubの上限6時間より短く）
 
+
+def check_once(page, notified):
+    for day in (13, 14):
+        page.goto(BASE.format(day=day), timeout=60000)
+        page.wait_for_load_state("networkidle", timeout=60000)
+        page.wait_for_timeout(8000)  # 便一覧の読み込み待ち
+        for d, tm, stop in TARGETS:
+            if d != day:
+                continue
+            text = page.evaluate(FIND_JS, [tm, stop])
+            status = judge(text)
+            print(f"11/{d} {tm} {stop}: {status}", flush=True)
+            if status == "unknown":
+                print("  テキスト:", (text or "")[:1000], flush=True)
+            key = (d, tm)
+            if status == "available" and key not in notified:
+                notify(f"空きあり！ 11/{d} {tm} {stop}発\n" + BASE.format(day=day))
+                notified.add(key)
+            elif status == "full":
+                notified.discard(key)  # 満席に戻ったら、次の空きでまた通知
+
+
+def main():
+    notified = set()
+    end = time.time() + RUN_HOURS * 3600
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        for day in (13, 14):
-            page.goto(BASE.format(day=day), timeout=60000)
-            page.wait_for_load_state("networkidle", timeout=60000)
-            page.wait_for_timeout(8000)  # 便一覧の読み込み待ち
-            for d, tm, stop in TARGETS:
-                if d != day:
-                    continue
-                text = page.evaluate(FIND_JS, [tm, stop])
-                status = judge(text)
-                print(f"11/{d} {tm} {stop}: {status}")
-                if status == "unknown":
-                    print("  テキスト:", (text or "")[:1000])
-                if status == "available":
-                    notify(f"空きあり！ 11/{d} {tm} {stop}発\n" + BASE.format(day=day))
+        while time.time() < end:
+            jst = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=9)
+            print("---", jst.strftime("%m/%d %H:%M JST"), flush=True)
+            if 2 <= jst.hour < 5:
+                print("サイト休止時間なのでスキップ", flush=True)
+            else:
+                try:
+                    check_once(page, notified)
+                except Exception as e:
+                    print("エラー（次回また試す）:", e, flush=True)
+            time.sleep(INTERVAL_SEC)
         browser.close()
 
 
